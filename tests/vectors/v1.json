@@ -1,0 +1,36 @@
+{
+  "encryption_version": 1,
+  "password": "senha-de-teste",
+  "key_derivation": {
+    "algorithm": "PBKDF2-HMAC-SHA256",
+    "salt_utf8": "personal-whats/v1",
+    "iterations": 600000,
+    "key_size": 32
+  },
+  "key_base64": "lZRBhFCFwnSrY9VP9iEzrJ3layw3xiSwlfcVqwZ3k88=",
+  "key_check": {
+    "plaintext_utf8": "personal-whats-key-check",
+    "nonce_base64": "AAAAAAAAAAAAAAAA",
+    "ciphertext_base64": "p6SyKsHvdhbYZkWcYq4zTRXGQ/tMDR9fuWf2fZIrzamDf21aiCngLA=="
+  },
+  "messages": [
+    {
+      "description": "text only",
+      "nonce_base64": "AQEBAQEBAQEBAQEB",
+      "ciphertext_base64": "5rn85v4MqUuFfcO/H564Wahx/n3yL/1ll+rc7kML3wt/CNeUHxugqlaWtOffOc3KCLGg5nVa4vFmzRCY6AGtJZ0FCXPhwC6/DmEILNB6auIj5RWqYBlAsw==",
+      "plaintext": "{\"text\":\"Olá! Mensagem de teste ✅\",\"recipient\":null,\"attachments\":[]}"
+    },
+    {
+      "description": "text, recipient and attachment",
+      "nonce_base64": "AgICAgICAgICAgIC",
+      "ciphertext_base64": "8bhhPjPyzDLrumlnyD1aGGLqCwpyw371DCWS4mTjkBd4avR3soHKpXI/ClUzJKQsWaV4iyZqVdKMKTuVgpsXvJ1SDQKL9N32j8SGCds9FYe1lvipj6e4OoZCRzEFkiCk3EEkrZEeUW6mtALeH/Wem4yHqdSYf2NBY2RcKDA5GyKEU874WqTGhg9AzxYc3QXeuRI4UnHip4+7icepZnce1GnL2LBM7afcHZCItYVj48fUssOZh4TeyWNeszCGbJKyTv0n2tYWY6WeaehrIMMLpBBh3j/cXBc5qZRgfLAiJuFSPBJAJ0Yffl8=",
+      "plaintext": "{\"text\":\"Relatório da semana\",\"recipient\":\"5548999998888\",\"attachments\":[{\"file_name\":\"relatorio.pdf\",\"mimetype\":\"application/pdf\",\"content\":\"JVBERi0xLjQgY29udGV1ZG8gZGUgdGVzdGU=\",\"caption\":\"Resumo: 3 vagas novas\"}]}"
+    },
+    {
+      "description": "group recipient",
+      "nonce_base64": "AwMDAwMDAwMDAwMD",
+      "ciphertext_base64": "5w9KcDVHLTDAfJgmOx0wwmIN+XjwPB02IJ8U9Lc0ZLv3I9Xv2wLCTLyQE6B6c83iA+qWk9MakLWWPfzB0h3bpjmUnnr/cbJpEW0gCopDaa03QsSmj4XkRlIhLjyrVVukub7muOU=",
+      "plaintext": "{\"text\":\"Mensagem para grupo\",\"recipient\":\"120363427990271477@g.us\",\"attachments\":[]}"
+    }
+  ]
+}

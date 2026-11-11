@@ -1,0 +1,95 @@
+[build-system]
+requires = ['setuptools>=65.0', 'wheel']
+build-backend = 'setuptools.build_meta'
+
+[project]
+authors = [{ name = "Gustavo Bernardo Rodrigues" }]
+name = "interface-personal-whats"
+description = "Contrato e cliente da fila de mensagens de WhatsApp do personalWhats"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+classifiers = [
+  "Typing :: Typed",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dynamic = ["version", "readme"]
+dependencies = ["pydantic >=2.10, <3", "pymongo[srv] >=4.6, <5", "cryptography >=42"]
+
+[dependency-groups]
+lint = ["black", "ruff", "mypy>=0.94"]
+test = ["pytest", "pytest-cov", "pytest-mock", "mongomock"]
+dev = [{ include-group = "lint" }, { include-group = "test" }]
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.dynamic]
+version = { attr = "interface_personal_whats.version.VERSION" }
+readme = { file = "README.md" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+interface_personal_whats = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.black]
+line-length = 100
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+strict = true
+show_error_codes = true
+show_column_numbers = true
+exclude = "^(build)/"
+
+[[tool.mypy.overrides]]
+module = ["mongomock.*"]
+ignore_missing_imports = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
+precision = 2
+
+[tool.ruff]
+lint.select = [
+  "A",   # flake8-builtins
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "C4",  # flake8-comprehensions
+  "B",   # flake8-bugbear
+  "N",   # pep8-naming
+  "C90", # mccabe
+  "S",   # flake8-bandit
+  "T20", # flake8-print
+  "ERA", # eradicate
+  "RUF", # Ruff-specific rules
+  "TRY", # tryceratops
+  "D",   # pydocstyle
+  "I",   # isort
+]
+lint.ignore = [
+  "D1",   # pydocstyle: missing docstrings
+  "D203", # pydocstyle: one-blank-line-before-class
+  "D213", # pydocstyle: multi-line-summary-second-line
+  "D401", # pydocstyle: non-imperative-mood
+]
+line-length = 100
+
+[tool.ruff.lint.isort]
+known-first-party = ["interface_personal_whats"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"] # assert and hardcoded test passwords
+"scripts/*" = ["T20", "S105"]
+"__init__.py" = ["F401"]             # imported but unused
