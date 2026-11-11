@@ -63,6 +63,7 @@ if reply is not None:
   13:39  chega "sim", sem citar nada        → resposta de (B); (A) segue esperando
   13:40  chega "não", citando (A)           → resposta de (A)
   ```
+- A mensagem aceita como resposta ganha uma reação ✅ no WhatsApp assim que é guardada.
 - Mídia não é baixada: `text` traz a legenda e `message_type` o tipo (`audioMessage`...).
 - `wait_for_reply` levanta `MessageNotSentError` (rejeitada, falhou, ou não enviada em
   `send_timeout`, padrão 10 minutos) e `ReplyNotExpectedError` (enviada sem `expect_unique_reply`).
