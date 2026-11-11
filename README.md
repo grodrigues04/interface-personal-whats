@@ -40,6 +40,34 @@ message_id = whats.send_message(
 whats.get_message(message_id).status    # received, validated, rejected, sending, sent, failed
 ```
 
+### Esperar a resposta
+
+```python
+message_id = whats.send_message(source="meu_projeto", text="Posso aplicar?", expect_unique_reply=True)
+reply = whats.wait_for_reply(message_id)   # None se ninguém respondeu em 10 minutos
+if reply is not None:
+    print(reply.text, reply.message_type, reply.received_at)
+```
+
+- O texto sempre começa com `(RESPOSTA ÚNICA)` (`UNIQUE_REPLY_PREFIX`): só a primeira mensagem
+  conta como resposta. O prefixo entra no limite de 10.000 caracteres.
+- O personalWhats escuta só o chat para onde a mensagem foi, por `REPLY_WINDOW` (10 minutos)
+  após o envio, e guarda a primeira mensagem escrita ali (criptografada). Nenhum outro chat é lido.
+- Várias mensagens esperando resposta no mesmo chat ao mesmo tempo: se a resposta citar uma delas
+  ("Responder" no WhatsApp), vai para a citada; sem citação, vai para a última enviada. Cada
+  resposta conta para uma mensagem só, e as outras seguem esperando até o prazo delas:
+
+  ```
+  13:37  envia (A) "(RESPOSTA ÚNICA) ..."   → espera até 13:47
+  13:38  envia (B) "(RESPOSTA ÚNICA) ..."   → espera até 13:48
+  13:39  chega "sim", sem citar nada        → resposta de (B); (A) segue esperando
+  13:40  chega "não", citando (A)           → resposta de (A)
+  ```
+- Mídia não é baixada: `text` traz a legenda e `message_type` o tipo (`audioMessage`...).
+- `wait_for_reply` levanta `MessageNotSentError` (rejeitada, falhou, ou não enviada em
+  `send_timeout`, padrão 10 minutos) e `ReplyNotExpectedError` (enviada sem `expect_unique_reply`).
+  `get_reply(message_id)` consulta sem bloquear.
+
 - `recipient`: número com DDI (qualquer formatação), JID de grupo (`...@g.us`) ou de contato
   (`...@s.whatsapp.net`).
 - Precisa de `text` ou de pelo menos um anexo. Limites: texto 10.000 caracteres, legenda 1.000,
@@ -66,6 +94,11 @@ whats.get_message(message_id).status    # received, validated, rejected, sending
 | `validated_at`, `sent_at`  | Date       | sim     | preenchidos pelo personalWhats                   |
 | `next_attempt_at`    | Date             | sim     | quando o envio pode ser tentado de novo          |
 | `expires_at`         | Date             | sim     | índice TTL: a mensagem some 30 dias após o status final |
+| `expect_unique_reply`       | bool             | sim     | o personalWhats deve esperar a resposta          |
+| `reply_deadline`     | Date             | sim     | até quando a resposta é aceita (`sent_at` + 10 min) |
+| `reply_chat`         | `{nonce, ciphertext}` | —  | JSON `{chat_jids, sent_message_ids, sent_at}`, para o personalWhats retomar a espera após reiniciar |
+| `reply`              | `{nonce, ciphertext}` | —  | JSON `{"text": "...", "message_type": "conversation"}` |
+| `replied_at`         | Date             | sim     | quando a resposta chegou                         |
 
 ### Criptografia (versão 1)
 
@@ -80,6 +113,7 @@ whats.get_message(message_id).status    # received, validated, rejected, sending
                     "content": "<base64>", "caption": "..."}]}
   ```
 
+- `reply_chat` e `reply` usam a mesma chave e cifra, cada um com seu nonce.
 - Verificação da senha: o validator grava em `personal_whats.settings` o documento
   `{"_id": "key_check", "nonce": Binary, "ciphertext": Binary}` com o texto
   `personal-whats-key-check` criptografado. Quem consegue descriptografá-lo tem a senha certa.

@@ -18,3 +18,13 @@ class PersonalWhatsNotInitializedError(PersonalWhatsError):
 class MessageNotFoundError(PersonalWhatsError):
     def __init__(self, message_id: str) -> None:
         super().__init__(f"Mensagem {message_id} não encontrada")
+
+
+class ReplyNotExpectedError(PersonalWhatsError):
+    def __init__(self, message_id: str) -> None:
+        super().__init__(f"Mensagem {message_id} foi enviada sem expect_unique_reply=True")
+
+
+class MessageNotSentError(PersonalWhatsError):
+    def __init__(self, message_id: str, reason: str) -> None:
+        super().__init__(f"Mensagem {message_id} não foi enviada: {reason}")

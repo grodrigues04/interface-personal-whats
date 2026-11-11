@@ -1,6 +1,6 @@
 import mimetypes
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Optional, Union
@@ -18,6 +18,10 @@ MAX_TEXT_LENGTH = 10_000
 MAX_CAPTION_LENGTH = 1_000
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENTS_SIZE = 10 * 1024 * 1024
+# How long after the message is sent personalWhats listens to its chat for a reply
+REPLY_WINDOW = timedelta(minutes=10)
+# Added to every message sent with expect_unique_reply: only the first message is the reply
+UNIQUE_REPLY_PREFIX = "(RESPOSTA ÚNICA)"
 
 # Phone number with country code (only digits), group JID or contact JID
 RECIPIENT_PATTERN = r"^(\d{10,15}|\d+(-\d+)?@g\.us|\d{10,15}@s\.whatsapp\.net)$"
@@ -123,3 +127,19 @@ class MessageInfo(BaseModel):
     created_at: datetime
     updated_at: datetime
     sent_at: Optional[datetime] = None
+    expect_unique_reply: bool = False
+    reply_deadline: Optional[datetime] = None
+    replied_at: Optional[datetime] = None
+
+
+class ReplyPayload(BaseModel):
+    """Encrypted part of a reply, written by personalWhats/whatsapp."""
+
+    text: Optional[str] = None
+    # WhatsApp content type: "conversation", "extendedTextMessage", "imageMessage",
+    # "audioMessage"... Media is not downloaded: only its caption comes in `text`.
+    message_type: str
+
+
+class Reply(ReplyPayload):
+    received_at: datetime

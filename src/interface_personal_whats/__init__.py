@@ -3,11 +3,21 @@ import logging
 from .exceptions import (
     InvalidPasswordError,
     MessageNotFoundError,
+    MessageNotSentError,
     PersonalWhatsError,
     PersonalWhatsNotInitializedError,
+    ReplyNotExpectedError,
 )
 from .main import InterfacePersonalWhats
-from .schemas import Attachment, MessageInfo, MessagePayload, MessageStatus
+from .schemas import (
+    REPLY_WINDOW,
+    UNIQUE_REPLY_PREFIX,
+    Attachment,
+    MessageInfo,
+    MessagePayload,
+    MessageStatus,
+    Reply,
+)
 from .version import VERSION
 
 logging.getLogger(__name__).addHandler(logging.NullHandler())
@@ -15,13 +25,18 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 __version__ = VERSION
 
 __all__ = [
+    "REPLY_WINDOW",
+    "UNIQUE_REPLY_PREFIX",
     "Attachment",
     "InterfacePersonalWhats",
     "InvalidPasswordError",
     "MessageInfo",
     "MessageNotFoundError",
+    "MessageNotSentError",
     "MessagePayload",
     "MessageStatus",
     "PersonalWhatsError",
     "PersonalWhatsNotInitializedError",
+    "Reply",
+    "ReplyNotExpectedError",
 ]
