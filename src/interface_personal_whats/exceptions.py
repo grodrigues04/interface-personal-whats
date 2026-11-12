@@ -28,3 +28,8 @@ class ReplyNotExpectedError(PersonalWhatsError):
 class MessageNotSentError(PersonalWhatsError):
     def __init__(self, message_id: str, reason: str) -> None:
         super().__init__(f"Mensagem {message_id} não foi enviada: {reason}")
+
+
+class WatchNotFoundError(PersonalWhatsError):
+    def __init__(self, watch_id: str) -> None:
+        super().__init__(f"Escuta {watch_id} não encontrada")

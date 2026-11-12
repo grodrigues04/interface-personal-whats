@@ -69,6 +69,32 @@ if reply is not None:
   `send_timeout`, padrão 10 minutos) e `ReplyNotExpectedError` (enviada sem `expect_unique_reply`).
   `get_reply(message_id)` consulta sem bloquear.
 
+### Ler comandos de um chat
+
+```python
+watch_id = whats.watch_chat(
+    source="meu_projeto",
+    chat="120363000000000000@g.us",   # opcional: sem ele, o contato padrão (grupo Claudio)
+    command="/prompt",                # opcional: sem ele, todo comando (mensagem que começa com "/")
+    until=datetime.now(timezone.utc) + timedelta(minutes=30),  # opcional: sem ele, até stop_watch
+)
+for message in whats.read_new_messages(watch_id):   # cada comando volta uma vez só
+    message.text, message.sender_name, message.from_me, message.received_at
+    whats.send_message(source="meu_projeto", text="Recebido", recipient="120363000000000000@g.us",
+                       quoted=message.quote)        # responde citando ("Responder") o comando
+whats.stop_watch(watch_id)            # ou whats.stop_watches("meu_projeto") ao iniciar
+```
+
+- Só mensagens que começam com `/` são guardadas, e com `command` só as que têm esse comando
+  como primeira palavra (sem diferenciar maiúsculas). Todo o resto do chat é descartado sem ser
+  lido; nenhum outro chat é olhado.
+- Contam mensagens escritas depois do início da escuta (e antes de `until`), inclusive as do
+  celular da própria conta (`from_me`). Mensagens enviadas pelo personalWhats nunca contam.
+- Um comando guardado por uma escuta **não** conta como resposta de `expect_unique_reply`.
+- O personalWhats lê as escutas a cada 5 segundos: comandos enviados nos primeiros segundos de
+  uma escuta nova podem se perder.
+- `quoted` precisa ser uma mensagem do chat do `recipient`. Só a primeira mensagem enviada cita.
+
 - `recipient`: número com DDI (qualquer formatação), JID de grupo (`...@g.us`) ou de contato
   (`...@s.whatsapp.net`).
 - Precisa de `text` ou de pelo menos um anexo. Limites: texto 10.000 caracteres, legenda 1.000,
@@ -101,6 +127,18 @@ if reply is not None:
 | `reply`              | `{nonce, ciphertext}` | —  | JSON `{"text": "...", "message_type": "conversation"}` |
 | `replied_at`         | Date             | sim     | quando a resposta chegou                         |
 
+### Coleções `personal_whats.watches` e `personal_whats.incoming`
+
+`watches` (gravado pela interface): `source`, `encryption_version`, `nonce`, `ciphertext` (JSON
+`{"chat": "..." | null, "command": "/prompt" | null}`), `created_at`, `until` (Date ou null),
+`stopped_at` (Date ou null) e `expires_at` (TTL: 30 dias após o fim).
+
+`incoming` (gravado pelo personalWhats): `watch_id`, `whatsapp_message_id` (único por escuta),
+`encryption_version`, `nonce`, `ciphertext`, `received_at`, `read_at` (preenchido por
+`read_new_messages`) e `expires_at` (TTL de 30 dias). O conteúdo criptografado é o JSON
+`{"text", "sender_name", "sender_jid", "from_me", "quote": {"chat_jid", "message_id",
+"participant", "from_me", "text"}}`.
+
 ### Criptografia (versão 1)
 
 - Chave: `PBKDF2-HMAC-SHA256(senha UTF-8, salt = "personal-whats/v1", 600.000 iterações, 32 bytes)`.
@@ -111,8 +149,11 @@ if reply is not None:
   ```json
   {"text": "...", "recipient": "5548999998888",
    "attachments": [{"file_name": "a.pdf", "mimetype": "application/pdf",
-                    "content": "<base64>", "caption": "..."}]}
+                    "content": "<base64>", "caption": "..."}],
+   "quoted": null}
   ```
+
+  `quoted` (opcional) é `{"chat_jid", "message_id", "participant", "from_me", "text"}`.
 
 - `reply_chat` e `reply` usam a mesma chave e cifra, cada um com seu nonce.
 - Verificação da senha: o validator grava em `personal_whats.settings` o documento

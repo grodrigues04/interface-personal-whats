@@ -7,16 +7,20 @@ from .exceptions import (
     PersonalWhatsError,
     PersonalWhatsNotInitializedError,
     ReplyNotExpectedError,
+    WatchNotFoundError,
 )
 from .main import InterfacePersonalWhats
 from .schemas import (
     REPLY_WINDOW,
     UNIQUE_REPLY_PREFIX,
     Attachment,
+    IncomingMessage,
     MessageInfo,
     MessagePayload,
     MessageStatus,
+    QuotedMessage,
     Reply,
+    WatchInfo,
 )
 from .version import VERSION
 
@@ -28,6 +32,7 @@ __all__ = [
     "REPLY_WINDOW",
     "UNIQUE_REPLY_PREFIX",
     "Attachment",
+    "IncomingMessage",
     "InterfacePersonalWhats",
     "InvalidPasswordError",
     "MessageInfo",
@@ -37,6 +42,9 @@ __all__ = [
     "MessageStatus",
     "PersonalWhatsError",
     "PersonalWhatsNotInitializedError",
+    "QuotedMessage",
     "Reply",
     "ReplyNotExpectedError",
+    "WatchInfo",
+    "WatchNotFoundError",
 ]

@@ -14,6 +14,7 @@ from .exceptions import (
     MessageNotSentError,
     PersonalWhatsNotInitializedError,
     ReplyNotExpectedError,
+    WatchNotFoundError,
 )
 
 log = logging.getLogger(__name__)
@@ -21,10 +22,14 @@ log = logging.getLogger(__name__)
 DEFAULT_DATABASE_NAME = "personal_whats"
 MESSAGES_COLLECTION = "messages"
 SETTINGS_COLLECTION = "settings"
+WATCHES_COLLECTION = "watches"
+INCOMING_COLLECTION = "incoming"
 KEY_CHECK_ID = "key_check"
 # Encrypted fields: never returned by get_message
 ENCRYPTED_FIELDS = ("nonce", "ciphertext", "reply_chat", "reply")
 DEFAULT_SEND_TIMEOUT = timedelta(minutes=10)
+# Watches and the commands they received are removed this long after the watch ends
+WATCH_RETENTION = timedelta(days=30)
 
 Document = dict[str, Any]
 
@@ -43,6 +48,48 @@ def decrypt_payload(key: bytes, message_document: Document) -> schemas.MessagePa
         ),
     )
     return schemas.MessagePayload.model_validate_json(plaintext)
+
+
+def encrypt_model(key: bytes, model: Any) -> crypto.EncryptedData:
+    return crypto.encrypt(key, model.model_dump_json().encode("utf-8"))
+
+
+def decrypt_incoming(key: bytes, incoming_document: Document) -> schemas.IncomingMessage:
+    """Raises InvalidPasswordError (wrong key)."""
+    plaintext = crypto.decrypt(
+        key,
+        crypto.EncryptedData(
+            nonce=bytes(incoming_document["nonce"]),
+            ciphertext=bytes(incoming_document["ciphertext"]),
+        ),
+    )
+    incoming_payload = schemas.IncomingPayload.model_validate_json(plaintext)
+    return schemas.IncomingMessage(
+        **incoming_payload.model_dump(),
+        id=str(incoming_document["_id"]),
+        watch_id=str(incoming_document["watch_id"]),
+        received_at=incoming_document["received_at"],
+    )
+
+
+def build_watch_document(
+    source: str,
+    encrypted_data: crypto.EncryptedData,
+    until: Optional[datetime],
+    now: Optional[datetime] = None,
+) -> Document:
+    now = now or datetime.now(timezone.utc)
+    return {
+        "source": source,
+        "encryption_version": crypto.ENCRYPTION_VERSION,
+        "nonce": Binary(encrypted_data.nonce),
+        "ciphertext": Binary(encrypted_data.ciphertext),
+        "created_at": now,
+        "until": until,
+        "stopped_at": None,
+        # Removed by the TTL index after it ends; a watch without `until` is kept while active
+        "expires_at": until + WATCH_RETENTION if until is not None else None,
+    }
 
 
 def add_unique_reply_prefix(text: Optional[str]) -> str:
@@ -125,6 +172,8 @@ class InterfacePersonalWhats:
         database = self._client[database_name]
         self._messages: Collection[Document] = database[MESSAGES_COLLECTION]
         self._settings: Collection[Document] = database[SETTINGS_COLLECTION]
+        self._watches: Collection[Document] = database[WATCHES_COLLECTION]
+        self._incoming: Collection[Document] = database[INCOMING_COLLECTION]
         self._key = crypto.derive_key(encryption_password)
         self._is_password_checked = False
 
@@ -146,12 +195,16 @@ class InterfacePersonalWhats:
         recipient: Optional[str] = None,
         attachments: Optional[list[schemas.Attachment]] = None,
         expect_unique_reply: bool = False,
+        quoted: Optional[schemas.QuotedMessage] = None,
     ) -> str:
         """Queues a message and returns its id.
 
         `source` identifies the project that sends it (ex.: "vagas_automator"). Without
         `recipient`, personalWhats sends it to its default recipient. Invalid content raises
         pydantic.ValidationError and nothing is queued.
+
+        `quoted` (IncomingMessage.quote) makes the first message sent reply to ("Responder")
+        that received message, which must be in the recipient's chat.
 
         With `expect_unique_reply`, the text starts with UNIQUE_REPLY_PREFIX and personalWhats
         listens to the recipient's chat (and only to it) for REPLY_WINDOW after sending, storing
@@ -161,7 +214,7 @@ class InterfacePersonalWhats:
         if expect_unique_reply:
             text = add_unique_reply_prefix(text)
         payload = schemas.MessagePayload(
-            text=text, recipient=recipient, attachments=attachments or []
+            text=text, recipient=recipient, attachments=attachments or [], quoted=quoted
         )
         if not self._is_password_checked:
             self.check_password()
@@ -231,6 +284,86 @@ class InterfacePersonalWhats:
             else:
                 limit = reply_deadline
             time.sleep(min(poll_interval_seconds, (limit - now).total_seconds()))
+
+    def watch_chat(
+        self,
+        source: str,
+        chat: Optional[str] = None,
+        command: Optional[str] = None,
+        until: Optional[datetime] = None,
+    ) -> str:
+        """Starts listening to the commands written in a chat and returns the watch id.
+
+        Only messages starting with "/" are stored, and with `command` (ex.: "/prompt") only
+        that command; every other message of the chat is discarded unread. Without `chat`, the
+        default recipient (group Claudio) is watched. Without `until`, the watch lasts until
+        stop_watch. Read what arrived with read_new_messages.
+        """
+        source = schemas.MessageSource(source=source).source
+        payload = schemas.WatchPayload(chat=chat, command=command)
+        if until is not None and until.tzinfo is None:
+            raise ValueError("until must be timezone-aware")  # noqa: TRY003
+        if not self._is_password_checked:
+            self.check_password()
+
+        document = build_watch_document(source, encrypt_model(self._key, payload), until)
+        watch_id = str(self._watches.insert_one(document).inserted_id)
+        log.info(f"Watch {watch_id} started by {source}")
+        return watch_id
+
+    def _find_watch(self, watch_id: str) -> Document:
+        try:
+            object_id = ObjectId(watch_id)
+        except (InvalidId, TypeError) as error:
+            raise WatchNotFoundError(watch_id) from error
+        document = self._watches.find_one({"_id": object_id})
+        if document is None:
+            raise WatchNotFoundError(watch_id)
+        return document
+
+    def get_watch(self, watch_id: str) -> schemas.WatchInfo:
+        document = self._find_watch(watch_id)
+        return schemas.WatchInfo.model_validate({**document, "id": str(document["_id"])})
+
+    def stop_watch(self, watch_id: str) -> None:
+        """Stops the watch: personalWhats stops storing its commands within a few seconds."""
+        document = self._find_watch(watch_id)
+        if document.get("stopped_at") is not None:
+            return
+        now = datetime.now(timezone.utc)
+        self._watches.update_one(
+            {"_id": document["_id"]},
+            {"$set": {"stopped_at": now, "expires_at": now + WATCH_RETENTION}},
+        )
+        log.info(f"Watch {watch_id} stopped")
+
+    def stop_watches(self, source: str) -> int:
+        """Stops every active watch of a project (ex.: left by a previous run). Returns how many."""
+        now = datetime.now(timezone.utc)
+        result = self._watches.update_many(
+            {"source": source, "stopped_at": None},
+            {"$set": {"stopped_at": now, "expires_at": now + WATCH_RETENTION}},
+        )
+        return result.modified_count
+
+    def read_new_messages(self, watch_id: str) -> list[schemas.IncomingMessage]:
+        """Commands received by the watch and not read yet, oldest first.
+
+        Each command is returned only once: it is marked as read here.
+        """
+        watch = self._find_watch(watch_id)
+        documents = list(
+            self._incoming.find({"watch_id": watch["_id"], "read_at": None}).sort(
+                [("received_at", 1), ("_id", 1)]
+            )
+        )
+        if not documents:
+            return []
+        self._incoming.update_many(
+            {"_id": {"$in": [document["_id"] for document in documents]}},
+            {"$set": {"read_at": datetime.now(timezone.utc)}},
+        )
+        return [decrypt_incoming(self._key, document) for document in documents]
 
     def close(self) -> None:
         self._client.close()

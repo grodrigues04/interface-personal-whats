@@ -16,6 +16,7 @@ from interface_personal_whats import (
     PersonalWhatsNotInitializedError,
     Reply,
     ReplyNotExpectedError,
+    WatchNotFoundError,
     crypto,
     main,
     schemas,
@@ -301,3 +302,142 @@ def test_unique_reply_prefix_counts_in_the_text_limit(initialized_mongo: Any) ->
         interface(initialized_mongo).send_message(
             "vagas", text="x" * schemas.MAX_TEXT_LENGTH, expect_unique_reply=True
         )
+
+
+def incoming(mongo_client: Any) -> Any:
+    return mongo_client[main.DEFAULT_DATABASE_NAME][main.INCOMING_COLLECTION]
+
+
+def watches(mongo_client: Any) -> Any:
+    return mongo_client[main.DEFAULT_DATABASE_NAME][main.WATCHES_COLLECTION]
+
+
+def insert_incoming(mongo_client: Any, key: bytes, watch_id: str, text: str) -> None:
+    """Writes a received command like personalWhats/whatsapp does."""
+    payload = schemas.IncomingPayload(
+        text=text,
+        sender_name="Maria",
+        sender_jid="5548999998888@s.whatsapp.net",
+        quote=schemas.QuotedMessage(
+            chat_jid="120363000000000000@g.us",
+            message_id=f"ID-{text}",
+            participant="5548999998888@s.whatsapp.net",
+            text=text,
+        ),
+    )
+    encrypted_data = main.encrypt_model(key, payload)
+    incoming(mongo_client).insert_one(
+        {
+            "watch_id": ObjectId(watch_id),
+            "source": "prompt_automator",
+            "encryption_version": crypto.ENCRYPTION_VERSION,
+            "nonce": encrypted_data.nonce,
+            "ciphertext": encrypted_data.ciphertext,
+            "received_at": datetime.now(timezone.utc),
+            "read_at": None,
+        }
+    )
+
+
+def test_watch_chat_stores_encrypted_chat_and_command(initialized_mongo: Any, key: bytes) -> None:
+    until = datetime(2026, 11, 12, 15, 0, tzinfo=timezone.utc)
+    watch_id = interface(initialized_mongo).watch_chat(
+        "prompt_automator", chat="120363000000000000@g.us", command="/Prompt", until=until
+    )
+
+    document = watches(initialized_mongo).find_one({"_id": ObjectId(watch_id)})
+    assert document["source"] == "prompt_automator"
+    assert document["stopped_at"] is None
+    assert document["expires_at"] == until + main.WATCH_RETENTION
+    assert b"120363" not in bytes(document["ciphertext"])
+    payload = schemas.WatchPayload.model_validate_json(
+        crypto.decrypt(
+            key, crypto.EncryptedData(bytes(document["nonce"]), bytes(document["ciphertext"]))
+        )
+    )
+    assert (payload.chat, payload.command) == ("120363000000000000@g.us", "/prompt")
+
+
+def test_watch_chat_without_until_has_no_expiration(initialized_mongo: Any) -> None:
+    watch_id = interface(initialized_mongo).watch_chat("prompt_automator")
+
+    watch = interface(initialized_mongo).get_watch(watch_id)
+    assert watch.until is None
+    assert watches(initialized_mongo).find_one()["expires_at"] is None
+
+
+def test_watch_chat_rejects_invalid_command(initialized_mongo: Any) -> None:
+    with pytest.raises(ValidationError):
+        interface(initialized_mongo).watch_chat("prompt_automator", command="prompt")
+
+    assert watches(initialized_mongo).count_documents({}) == 0
+
+
+def test_watch_chat_with_wrong_password_stores_nothing(initialized_mongo: Any) -> None:
+    with pytest.raises(InvalidPasswordError):
+        interface(initialized_mongo, password="errada").watch_chat("prompt_automator")
+
+    assert watches(initialized_mongo).count_documents({}) == 0
+
+
+def test_stop_watch_sets_stopped_at_and_expiration(initialized_mongo: Any) -> None:
+    whats = interface(initialized_mongo)
+    watch_id = whats.watch_chat("prompt_automator")
+
+    whats.stop_watch(watch_id)
+
+    watch = whats.get_watch(watch_id)
+    assert watch.stopped_at is not None
+    assert watches(initialized_mongo).find_one()["expires_at"] is not None
+
+
+def test_stop_watches_stops_only_the_active_watches_of_the_source(initialized_mongo: Any) -> None:
+    whats = interface(initialized_mongo)
+    whats.watch_chat("prompt_automator")
+    whats.watch_chat("prompt_automator")
+    other_watch_id = whats.watch_chat("outro_projeto")
+
+    assert whats.stop_watches("prompt_automator") == 2
+    assert whats.get_watch(other_watch_id).stopped_at is None
+
+
+def test_get_watch_with_unknown_id_raises(initialized_mongo: Any) -> None:
+    with pytest.raises(WatchNotFoundError):
+        interface(initialized_mongo).get_watch("invalido")
+
+
+def test_read_new_messages_returns_each_command_once(initialized_mongo: Any, key: bytes) -> None:
+    whats = interface(initialized_mongo)
+    watch_id = whats.watch_chat("prompt_automator", command="/prompt")
+    insert_incoming(initialized_mongo, key, watch_id, "/prompt primeiro")
+    insert_incoming(initialized_mongo, key, watch_id, "/prompt segundo")
+
+    first_read = whats.read_new_messages(watch_id)
+    second_read = whats.read_new_messages(watch_id)
+
+    assert [message.text for message in first_read] == ["/prompt primeiro", "/prompt segundo"]
+    assert first_read[0].sender_name == "Maria"
+    assert first_read[0].watch_id == watch_id
+    assert first_read[0].quote.message_id == "ID-/prompt primeiro"
+    assert second_read == []
+
+
+def test_read_new_messages_ignores_other_watches(initialized_mongo: Any, key: bytes) -> None:
+    whats = interface(initialized_mongo)
+    watch_id = whats.watch_chat("prompt_automator")
+    other_watch_id = whats.watch_chat("prompt_automator")
+    insert_incoming(initialized_mongo, key, other_watch_id, "/liberar")
+
+    assert whats.read_new_messages(watch_id) == []
+
+
+def test_send_message_with_quoted_message(initialized_mongo: Any, key: bytes) -> None:
+    quoted = schemas.QuotedMessage(
+        chat_jid="120363000000000000@g.us", message_id="ABC", participant="1@s.whatsapp.net"
+    )
+    message_id = interface(initialized_mongo).send_message(
+        "prompt_automator", text="Na fila", recipient="120363000000000000@g.us", quoted=quoted
+    )
+
+    document = messages(initialized_mongo).find_one({"_id": ObjectId(message_id)})
+    assert main.decrypt_payload(key, document).quoted == quoted

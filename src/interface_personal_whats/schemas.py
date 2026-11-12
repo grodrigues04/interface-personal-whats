@@ -27,6 +27,10 @@ UNIQUE_REPLY_PREFIX = "(RESPOSTA ÚNICA)"
 RECIPIENT_PATTERN = r"^(\d{10,15}|\d+(-\d+)?@g\.us|\d{10,15}@s\.whatsapp\.net)$"
 SOURCE_PATTERN = r"^[a-z0-9_-]{1,64}$"
 MIMETYPE_PATTERN = r"^[\w.+-]+/[\w.+-]+$"
+# Command watched in a chat: "/" followed by letters, digits, "_" or "-" (ex.: "/prompt")
+COMMAND_PATTERN = r"^/[\w-]{1,32}$"
+# A watched message is a command: its text starts with this character
+COMMAND_PREFIX = "/"
 
 Source = Annotated[str, StringConstraints(pattern=SOURCE_PATTERN)]
 
@@ -76,6 +80,34 @@ class Attachment(BaseModel):
         )
 
 
+class QuotedMessage(BaseModel):
+    """A received WhatsApp message, quoted ("Responder") by a message sent later.
+
+    Comes from IncomingMessage.quote: projects never build it by hand.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    chat_jid: str = Field(min_length=1)
+    message_id: str = Field(min_length=1)
+    # Author of the message in a group chat; None in a contact chat
+    participant: Optional[str] = None
+    from_me: bool = False
+    text: Optional[str] = None
+
+
+def normalize_chat_address(recipient: Optional[str]) -> Optional[str]:
+    """Phone numbers are accepted with any formatting: "+55 (48) 99999-8888"."""
+    if not isinstance(recipient, str):
+        return recipient
+    recipient = recipient.strip()
+    if not recipient:
+        return None
+    if "@" in recipient:
+        return recipient
+    return re.sub(r"\D", "", recipient)
+
+
 class MessagePayload(BaseModel):
     """Encrypted part of the message: nobody without the password can read it."""
 
@@ -85,6 +117,8 @@ class MessagePayload(BaseModel):
     # None means the default recipient configured in personalWhats
     recipient: Optional[str] = Field(default=None, pattern=RECIPIENT_PATTERN)
     attachments: list[Attachment] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
+    # The first message sent quotes it. Must be a message of the recipient's chat.
+    quoted: Optional[QuotedMessage] = None
 
     @field_validator("text")
     @classmethod
@@ -94,15 +128,7 @@ class MessagePayload(BaseModel):
     @field_validator("recipient", mode="before")
     @classmethod
     def normalize_recipient(cls, recipient: Optional[str]) -> Optional[str]:
-        """Phone numbers are accepted with any formatting: "+55 (48) 99999-8888"."""
-        if not isinstance(recipient, str):
-            return recipient
-        recipient = recipient.strip()
-        if not recipient:
-            return None
-        if "@" in recipient:
-            return recipient
-        return re.sub(r"\D", "", recipient)
+        return normalize_chat_address(recipient)
 
     @model_validator(mode="after")
     def check_content(self) -> "MessagePayload":
@@ -142,4 +168,56 @@ class ReplyPayload(BaseModel):
 
 
 class Reply(ReplyPayload):
+    received_at: datetime
+
+
+class WatchPayload(BaseModel):
+    """Encrypted part of a chat watch: which chat personalWhats listens to."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Same formats as MessagePayload.recipient. None means the default recipient.
+    chat: Optional[str] = Field(default=None, pattern=RECIPIENT_PATTERN)
+    # None: every command (message starting with "/"). Otherwise only this command.
+    command: Optional[str] = Field(default=None, pattern=COMMAND_PATTERN)
+
+    @field_validator("chat", mode="before")
+    @classmethod
+    def normalize_chat(cls, chat: Optional[str]) -> Optional[str]:
+        return normalize_chat_address(chat)
+
+    @field_validator("command", mode="before")
+    @classmethod
+    def lowercase_command(cls, command: Optional[str]) -> Optional[str]:
+        return command.strip().lower() if isinstance(command, str) else command
+
+
+class WatchInfo(BaseModel):
+    """Public part of a chat watch."""
+
+    id: str
+    source: str
+    created_at: datetime
+    # None: listens until stopped
+    until: Optional[datetime] = None
+    stopped_at: Optional[datetime] = None
+
+
+class IncomingPayload(BaseModel):
+    """Encrypted part of a command received in a watched chat, written by personalWhats/whatsapp."""
+
+    text: str
+    # WhatsApp name of the author ("pushName"); None when unknown
+    sender_name: Optional[str] = None
+    # JID of the author in a group, or of the contact
+    sender_jid: Optional[str] = None
+    # Sent from the phone of the personalWhats account (Gustavo himself)
+    from_me: bool = False
+    # Pass to send_message(quoted=...) to reply quoting this message
+    quote: QuotedMessage
+
+
+class IncomingMessage(IncomingPayload):
+    id: str
+    watch_id: str
     received_at: datetime
