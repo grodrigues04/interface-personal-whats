@@ -441,3 +441,35 @@ def test_send_message_with_quoted_message(initialized_mongo: Any, key: bytes) ->
 
     document = messages(initialized_mongo).find_one({"_id": ObjectId(message_id)})
     assert main.decrypt_payload(key, document).quoted == quoted
+
+
+def test_is_awaiting_reply_only_for_the_same_chat_while_waiting(initialized_mongo: Any) -> None:
+    whats = interface(initialized_mongo)
+    group = "120363000000000000@g.us"
+    assert whats.is_awaiting_reply(group) is False
+
+    message_id = whats.send_message(
+        "trello_automator", text="1 ou 2?", recipient=group, expect_unique_reply=True
+    )
+    whats.send_message("outro", text="sem resposta", recipient=group)
+
+    assert whats.is_awaiting_reply(group) is True
+    assert whats.is_awaiting_reply() is False
+    assert whats.is_awaiting_reply("+55 48 99999-8888") is False
+
+    messages(initialized_mongo).update_one(
+        {"_id": ObjectId(message_id)}, {"$set": {"reply": {"nonce": b"", "ciphertext": b""}}}
+    )
+    assert whats.is_awaiting_reply(group) is False
+
+
+def test_is_awaiting_reply_ignores_messages_past_their_deadline(initialized_mongo: Any) -> None:
+    whats = interface(initialized_mongo)
+    message_id = whats.send_message("projeto", text="?", expect_unique_reply=True)
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    messages(initialized_mongo).update_one(
+        {"_id": ObjectId(message_id)},
+        {"$set": {"status": "sent", "sent_at": past, "reply_deadline": past}},
+    )
+
+    assert whats.is_awaiting_reply() is False

@@ -5,11 +5,13 @@ from typing import Any, Optional
 
 from bson import Binary, ObjectId
 from bson.errors import InvalidId
+from pydantic import ValidationError
 from pymongo import MongoClient
 from pymongo.collection import Collection
 
 from . import crypto, schemas
 from .exceptions import (
+    InvalidPasswordError,
     MessageNotFoundError,
     MessageNotSentError,
     PersonalWhatsNotInitializedError,
@@ -246,6 +248,42 @@ class InterfacePersonalWhats:
         if not document.get("expect_unique_reply"):
             raise ReplyNotExpectedError(message_id)
         return decrypt_reply(self._key, document)
+
+    def is_awaiting_reply(self, recipient: Optional[str] = None) -> bool:
+        """True while a message with expect_unique_reply to this chat still waits for its reply.
+
+        Counts the messages of every project. Without `recipient`, the default recipient.
+
+        Two messages waiting in the same chat share the replies (see wait_for_reply): projects
+        that ask in a shared chat call this first and wait while it is True.
+        """
+        expected_recipient = schemas.normalize_chat_address(recipient)
+        now = datetime.now(timezone.utc)
+        waiting_documents = self._messages.find(
+            {
+                "expect_unique_reply": True,
+                "reply": {"$exists": False},
+                "status": {
+                    "$in": [
+                        schemas.MessageStatus.RECEIVED.value,
+                        schemas.MessageStatus.VALIDATED.value,
+                        schemas.MessageStatus.SENDING.value,
+                        schemas.MessageStatus.SENT.value,
+                    ]
+                },
+            }
+        )
+        for document in waiting_documents:
+            reply_deadline = find_reply_deadline(document)
+            if reply_deadline is not None and now >= reply_deadline:
+                continue
+            try:
+                payload = decrypt_payload(self._key, document)
+            except (InvalidPasswordError, ValidationError):
+                continue
+            if payload.recipient == expected_recipient:
+                return True
+        return False
 
     def wait_for_reply(
         self,
