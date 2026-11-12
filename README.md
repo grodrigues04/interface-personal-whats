@@ -68,6 +68,9 @@ if reply is not None:
 - `wait_for_reply` levanta `MessageNotSentError` (rejeitada, falhou, ou não enviada em
   `send_timeout`, padrão 10 minutos) e `ReplyNotExpectedError` (enviada sem `expect_unique_reply`).
   `get_reply(message_id)` consulta sem bloquear.
+- Chat usado por mais de um projeto (ex.: grupo Squeaker): antes de perguntar, espere enquanto
+  `whats.is_awaiting_reply(recipient)` for `True`, para nunca haver duas perguntas abertas no
+  mesmo chat dividindo as respostas.
 
 ### Ler comandos de um chat
 
