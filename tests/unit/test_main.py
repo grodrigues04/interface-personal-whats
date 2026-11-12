@@ -401,6 +401,18 @@ def test_stop_watches_stops_only_the_active_watches_of_the_source(initialized_mo
     assert whats.get_watch(other_watch_id).stopped_at is None
 
 
+def test_find_watches_returns_only_the_active_watches_of_the_source(
+    initialized_mongo: Any,
+) -> None:
+    whats = interface(initialized_mongo)
+    first_watch_id = whats.watch_chat("prompt_automator")
+    stopped_watch_id = whats.watch_chat("prompt_automator")
+    whats.stop_watch(stopped_watch_id)
+    whats.watch_chat("outro_projeto")
+
+    assert [watch.id for watch in whats.find_watches("prompt_automator")] == [first_watch_id]
+
+
 def test_get_watch_with_unknown_id_raises(initialized_mongo: Any) -> None:
     with pytest.raises(WatchNotFoundError):
         interface(initialized_mongo).get_watch("invalido")

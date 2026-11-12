@@ -399,6 +399,21 @@ class InterfacePersonalWhats:
         )
         log.info(f"Watch {watch_id} stopped")
 
+    def find_watches(self, source: str) -> list[schemas.WatchInfo]:
+        """Active watches of a project, oldest first.
+
+        A new run reads the commands its previous run left unread (read_new_messages) before
+        stopping them.
+        """
+        source = schemas.MessageSource(source=source).source
+        documents = self._watches.find({"source": source, "stopped_at": None}).sort(
+            [("created_at", 1), ("_id", 1)]
+        )
+        return [
+            schemas.WatchInfo.model_validate({**document, "id": str(document["_id"])})
+            for document in documents
+        ]
+
     def stop_watches(self, source: str) -> int:
         """Stops every active watch of a project (ex.: left by a previous run). Returns how many."""
         now = datetime.now(timezone.utc)

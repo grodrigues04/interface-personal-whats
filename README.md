@@ -94,6 +94,9 @@ whats.stop_watch(watch_id)            # ou whats.stop_watches("meu_projeto") ao 
 - Contam mensagens escritas depois do início da escuta (e antes de `until`), inclusive as do
   celular da própria conta (`from_me`). Mensagens enviadas pelo personalWhats nunca contam.
 - Um comando guardado por uma escuta **não** conta como resposta de `expect_unique_reply`.
+- Ao reiniciar, não perca o que chegou na escuta antiga: `whats.find_watches("meu_projeto")`
+  lista as escutas ativas do projeto (`until` é `None` nas que duram até `stop_watch`), e
+  `read_new_messages` ainda devolve os comandos não lidos delas; só depois chame `stop_watches`.
 - O personalWhats lê as escutas a cada 5 segundos: comandos enviados nos primeiros segundos de
   uma escuta nova podem se perder.
 - `quoted` precisa ser uma mensagem do chat do `recipient`. Só a primeira mensagem enviada cita.
