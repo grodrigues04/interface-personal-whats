@@ -228,6 +228,30 @@ class InterfacePersonalWhats:
         log.info(f"Message {message_id} queued by {source}")
         return message_id
 
+    def react(
+        self,
+        source: str,
+        message: schemas.QuotedMessage,
+        emoji: str = "✅",
+        recipient: Optional[str] = None,
+    ) -> str:
+        """Queues a reaction (emoji) to a received message and returns its id.
+
+        `message` is IncomingMessage.quote. Without `recipient`, the chat of the message (works for
+        groups; pass the number for a contact chat).
+        """
+        source = schemas.MessageSource(source=source).source
+        payload = schemas.MessagePayload(
+            recipient=recipient or message.chat_jid, quoted=message, reaction=emoji
+        )
+        if not self._is_password_checked:
+            self.check_password()
+
+        document = build_message_document(source, encrypt_payload(self._key, payload))
+        message_id = str(self._messages.insert_one(document).inserted_id)
+        log.info(f"Reaction {message_id} queued by {source}")
+        return message_id
+
     def _find_message(self, message_id: str, projection: Optional[Document] = None) -> Document:
         try:
             object_id = ObjectId(message_id)

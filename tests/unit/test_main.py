@@ -473,3 +473,24 @@ def test_is_awaiting_reply_ignores_messages_past_their_deadline(initialized_mong
     )
 
     assert whats.is_awaiting_reply() is False
+
+
+def test_react_queues_a_reaction_to_the_quoted_message(initialized_mongo: Any, key: bytes) -> None:
+    quoted = schemas.QuotedMessage(chat_jid="120363000000000000@g.us", message_id="ABC")
+    message_id = interface(initialized_mongo).react("prompt_automator", quoted)
+
+    document = messages(initialized_mongo).find_one({"_id": ObjectId(message_id)})
+    payload = main.decrypt_payload(key, document)
+    assert (payload.reaction, payload.recipient, payload.text) == ("✅", quoted.chat_jid, None)
+    assert payload.quoted == quoted
+
+
+def test_reaction_without_quoted_message_is_invalid() -> None:
+    with pytest.raises(ValidationError, match="citada"):
+        schemas.MessagePayload(recipient="5548999998888", reaction="✅")
+
+
+def test_reaction_with_text_is_invalid() -> None:
+    quoted = schemas.QuotedMessage(chat_jid="1@g.us", message_id="A")
+    with pytest.raises(ValidationError, match="nem anexo"):
+        schemas.MessagePayload(text="oi", quoted=quoted, reaction="✅")

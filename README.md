@@ -97,6 +97,8 @@ whats.stop_watch(watch_id)            # ou whats.stop_watches("meu_projeto") ao 
 - O personalWhats lê as escutas a cada 5 segundos: comandos enviados nos primeiros segundos de
   uma escuta nova podem se perder.
 - `quoted` precisa ser uma mensagem do chat do `recipient`. Só a primeira mensagem enviada cita.
+- `whats.react("meu_projeto", message.quote, emoji="✅")` reage à mensagem recebida (vai para o
+  chat dela; num contato, passe `recipient`). É uma mensagem da fila sem texto, com `reaction`.
 
 - `recipient`: número com DDI (qualquer formatação), JID de grupo (`...@g.us`) ou de contato
   (`...@s.whatsapp.net`).
@@ -157,6 +159,7 @@ whats.stop_watch(watch_id)            # ou whats.stop_watches("meu_projeto") ao 
   ```
 
   `quoted` (opcional) é `{"chat_jid", "message_id", "participant", "from_me", "text"}`.
+  `reaction` (opcional) é um emoji: a mensagem vira só uma reação a `quoted`, sem texto nem anexos.
 
 - `reply_chat` e `reply` usam a mesma chave e cifra, cada um com seu nonce.
 - Verificação da senha: o validator grava em `personal_whats.settings` o documento

@@ -22,6 +22,8 @@ MAX_ATTACHMENTS_SIZE = 10 * 1024 * 1024
 REPLY_WINDOW = timedelta(minutes=10)
 # Added to every message sent with expect_unique_reply: only the first message is the reply
 UNIQUE_REPLY_PREFIX = "(RESPOSTA ÚNICA)"
+# An emoji can take several code points (skin tone, joiners)
+MAX_REACTION_LENGTH = 16
 
 # Phone number with country code (only digits), group JID or contact JID
 RECIPIENT_PATTERN = r"^(\d{10,15}|\d+(-\d+)?@g\.us|\d{10,15}@s\.whatsapp\.net)$"
@@ -119,6 +121,8 @@ class MessagePayload(BaseModel):
     attachments: list[Attachment] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
     # The first message sent quotes it. Must be a message of the recipient's chat.
     quoted: Optional[QuotedMessage] = None
+    # Emoji reaction to `quoted` instead of a message: no text nor attachments
+    reaction: Optional[str] = Field(default=None, min_length=1, max_length=MAX_REACTION_LENGTH)
 
     @field_validator("text")
     @classmethod
@@ -132,6 +136,12 @@ class MessagePayload(BaseModel):
 
     @model_validator(mode="after")
     def check_content(self) -> "MessagePayload":
+        if self.reaction is not None:
+            if self.quoted is None:
+                raise ValueError("a reação precisa da mensagem citada (quoted)")  # noqa: TRY003
+            if self.text is not None or self.attachments:
+                raise ValueError("a reação não tem texto nem anexo")  # noqa: TRY003
+            return self
         if self.text is None and not self.attachments:
             raise ValueError("a mensagem precisa de texto ou de anexo")  # noqa: TRY003
         attachments_size = sum(len(attachment.content) for attachment in self.attachments)
