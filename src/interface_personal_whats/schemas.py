@@ -211,6 +211,8 @@ class WatchInfo(BaseModel):
     # None: listens until stopped
     until: Optional[datetime] = None
     stopped_at: Optional[datetime] = None
+    # Edits of the commands are stored too (edited_message_id of IncomingMessage)
+    include_edits: bool = False
 
 
 class IncomingPayload(BaseModel):
@@ -225,6 +227,9 @@ class IncomingPayload(BaseModel):
     from_me: bool = False
     # Pass to send_message(quoted=...) to reply quoting this message
     quote: QuotedMessage
+    # Only in watches with include_edits: this message is an edit of the command whose
+    # quote.message_id is this id, and `text` is the new text. `quote` points to the original.
+    edited_message_id: Optional[str] = None
 
 
 class IncomingMessage(IncomingPayload):

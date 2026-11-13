@@ -99,6 +99,12 @@ whats.stop_watch(watch_id)            # ou whats.stop_watches("meu_projeto") ao 
   `read_new_messages` ainda devolve os comandos não lidos delas; só depois chame `stop_watches`.
 - O personalWhats lê as escutas a cada 5 segundos: comandos enviados nos primeiros segundos de
   uma escuta nova podem se perder.
+- Edições: por padrão, editar uma mensagem no WhatsApp não gera nada. Com
+  `watch_chat(..., include_edits=True)`, a edição de um comando (que continua sendo comando da
+  escuta) chega em `read_new_messages` como uma mensagem nova, com o texto novo e
+  `edited_message_id` igual ao `quote.message_id` do comando original (o `quote` também aponta
+  para o original). Cabe ao projeto trocar o texto do comando que ainda não usou.
+  `WatchInfo.include_edits` diz se a escuta recebe edições.
 - `quoted` precisa ser uma mensagem do chat do `recipient`. Só a primeira mensagem enviada cita.
 - `whats.react("meu_projeto", message.quote, emoji="✅")` reage à mensagem recebida (vai para o
   chat dela; num contato, passe `recipient`). É uma mensagem da fila sem texto, com `reaction`.
@@ -139,13 +145,16 @@ whats.stop_watch(watch_id)            # ou whats.stop_watches("meu_projeto") ao 
 
 `watches` (gravado pela interface): `source`, `encryption_version`, `nonce`, `ciphertext` (JSON
 `{"chat": "..." | null, "command": "/prompt" | null}`), `created_at`, `until` (Date ou null),
-`stopped_at` (Date ou null) e `expires_at` (TTL: 30 dias após o fim).
+`include_edits` (bool; ausente = `false`), `stopped_at` (Date ou null) e `expires_at` (TTL: 30
+dias após o fim).
 
 `incoming` (gravado pelo personalWhats): `watch_id`, `whatsapp_message_id` (único por escuta),
 `encryption_version`, `nonce`, `ciphertext`, `received_at`, `read_at` (preenchido por
 `read_new_messages`) e `expires_at` (TTL de 30 dias). O conteúdo criptografado é o JSON
 `{"text", "sender_name", "sender_jid", "from_me", "quote": {"chat_jid", "message_id",
-"participant", "from_me", "text"}}`.
+"participant", "from_me", "text"}, "edited_message_id"}`. Numa edição, `whatsapp_message_id` é
+`edit:<id original>:<timestamp da edição>` e `edited_message_id` é o id original (ausente ou
+`null` nas mensagens que não são edição).
 
 ### Criptografia (versão 1)
 

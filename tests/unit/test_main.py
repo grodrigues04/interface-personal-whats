@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Optional
 
 import mongomock
 import pytest
@@ -312,7 +312,13 @@ def watches(mongo_client: Any) -> Any:
     return mongo_client[main.DEFAULT_DATABASE_NAME][main.WATCHES_COLLECTION]
 
 
-def insert_incoming(mongo_client: Any, key: bytes, watch_id: str, text: str) -> None:
+def insert_incoming(
+    mongo_client: Any,
+    key: bytes,
+    watch_id: str,
+    text: str,
+    edited_message_id: Optional[str] = None,
+) -> None:
     """Writes a received command like personalWhats/whatsapp does."""
     payload = schemas.IncomingPayload(
         text=text,
@@ -320,10 +326,11 @@ def insert_incoming(mongo_client: Any, key: bytes, watch_id: str, text: str) -> 
         sender_jid="5548999998888@s.whatsapp.net",
         quote=schemas.QuotedMessage(
             chat_jid="120363000000000000@g.us",
-            message_id=f"ID-{text}",
+            message_id=edited_message_id or f"ID-{text}",
             participant="5548999998888@s.whatsapp.net",
             text=text,
         ),
+        edited_message_id=edited_message_id,
     )
     encrypted_data = main.encrypt_model(key, payload)
     incoming(mongo_client).insert_one(
@@ -364,6 +371,49 @@ def test_watch_chat_without_until_has_no_expiration(initialized_mongo: Any) -> N
     watch = interface(initialized_mongo).get_watch(watch_id)
     assert watch.until is None
     assert watches(initialized_mongo).find_one()["expires_at"] is None
+
+
+def test_watch_chat_include_edits_is_public(initialized_mongo: Any) -> None:
+    whats = interface(initialized_mongo)
+    watch_id = whats.watch_chat("prompt_automator", command="/claude", include_edits=True)
+    other_watch_id = whats.watch_chat("prompt_automator")
+
+    assert whats.get_watch(watch_id).include_edits is True
+    assert whats.get_watch(other_watch_id).include_edits is False
+    assert [watch.include_edits for watch in whats.find_watches("prompt_automator")] == [
+        True,
+        False,
+    ]
+
+
+def test_watch_without_include_edits_field_reads_as_false(initialized_mongo: Any) -> None:
+    """Watches written before include_edits existed."""
+    whats = interface(initialized_mongo)
+    watch_id = whats.watch_chat("prompt_automator")
+    watches(initialized_mongo).update_one({}, {"$unset": {"include_edits": ""}})
+
+    assert whats.get_watch(watch_id).include_edits is False
+
+
+def test_read_new_messages_returns_edits_with_the_original_id(
+    initialized_mongo: Any, key: bytes
+) -> None:
+    whats = interface(initialized_mongo)
+    watch_id = whats.watch_chat("prompt_automator", command="/claude", include_edits=True)
+    insert_incoming(initialized_mongo, key, watch_id, "/claude faça")
+    insert_incoming(
+        initialized_mongo,
+        key,
+        watch_id,
+        "/claude faça direito",
+        edited_message_id="ID-/claude faça",
+    )
+
+    original, edit = whats.read_new_messages(watch_id)
+
+    assert original.edited_message_id is None
+    assert edit.edited_message_id == original.quote.message_id
+    assert edit.text == "/claude faça direito"
 
 
 def test_watch_chat_rejects_invalid_command(initialized_mongo: Any) -> None:

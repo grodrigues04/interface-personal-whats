@@ -79,6 +79,7 @@ def build_watch_document(
     encrypted_data: crypto.EncryptedData,
     until: Optional[datetime],
     now: Optional[datetime] = None,
+    include_edits: bool = False,
 ) -> Document:
     now = now or datetime.now(timezone.utc)
     return {
@@ -88,6 +89,7 @@ def build_watch_document(
         "ciphertext": Binary(encrypted_data.ciphertext),
         "created_at": now,
         "until": until,
+        "include_edits": include_edits,
         "stopped_at": None,
         # Removed by the TTL index after it ends; a watch without `until` is kept while active
         "expires_at": until + WATCH_RETENTION if until is not None else None,
@@ -353,6 +355,7 @@ class InterfacePersonalWhats:
         chat: Optional[str] = None,
         command: Optional[str] = None,
         until: Optional[datetime] = None,
+        include_edits: bool = False,
     ) -> str:
         """Starts listening to the commands written in a chat and returns the watch id.
 
@@ -360,6 +363,10 @@ class InterfacePersonalWhats:
         that command; every other message of the chat is discarded unread. Without `chat`, the
         default recipient (group Claudio) is watched. Without `until`, the watch lasts until
         stop_watch. Read what arrived with read_new_messages.
+
+        With `include_edits`, an edit of a message that is still a command of the watch is also
+        stored, as a new message whose `edited_message_id` is the `quote.message_id` of the
+        original. Without it, edits are discarded.
         """
         source = schemas.MessageSource(source=source).source
         payload = schemas.WatchPayload(chat=chat, command=command)
@@ -368,7 +375,9 @@ class InterfacePersonalWhats:
         if not self._is_password_checked:
             self.check_password()
 
-        document = build_watch_document(source, encrypt_model(self._key, payload), until)
+        document = build_watch_document(
+            source, encrypt_model(self._key, payload), until, include_edits=include_edits
+        )
         watch_id = str(self._watches.insert_one(document).inserted_id)
         log.info(f"Watch {watch_id} started by {source}")
         return watch_id
